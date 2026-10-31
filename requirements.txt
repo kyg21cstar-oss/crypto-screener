@@ -3,3 +3,4 @@ finance-datareader
 beautifulsoup4
 requests
 plotly
+pyupbit
