@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-st.set_page_config(layout="wide", page_title="알트코인 스윙 & 매집 통합 스크리너")
+st.set_page_config(layout="wide", page_title="알트코인 스윙 & 매집 통합 스크리너 (와이드망)")
 
 @st.cache_data(ttl=60)
 def get_krw_tickers():
@@ -27,7 +27,7 @@ def get_binance_volumes():
 @st.cache_data(ttl=60)
 def run_swing_screener(tickers):
     temp_results = []
-    progress_text = "유연한 가점제로 시장 스캔 중..."
+    progress_text = "유연한 와이드망(조건 완화)으로 시장 스캔 중..."
     my_bar = st.progress(0, text=progress_text)
     binance_vols = get_binance_volumes()
     
@@ -40,9 +40,6 @@ def run_swing_screener(tickers):
             latest = df.iloc[-1]
             
             peak_value = recent_30['value'].max() 
-            current_value = latest['value'] 
-            
-            # 300억 강제 필터링 제거 (대신 아래에서 가점으로 활용)
             
             df['SMA_20'] = df['close'].rolling(window=20).mean()
             df['STD_20'] = df['close'].rolling(window=20).std()
@@ -57,26 +54,26 @@ def run_swing_screener(tickers):
             price_trend = (recent_10['close'].iloc[-1] - recent_10['close'].iloc[0]) / recent_10['close'].iloc[0]
             obv_trend = recent_10['OBV'].iloc[-1] > recent_10['OBV'].iloc[0]
             
-            is_bb_squeeze = latest['Band_Width'] < 0.15
-            is_obv_accum = price_trend <= 0.05 and obv_trend
+            # [조건 대폭 완화]
+            is_bb_squeeze = latest['Band_Width'] < 0.25 # 15% -> 25%
+            is_obv_accum = price_trend <= 0.10 and obv_trend # 5% -> 10%
             
             peak_high = recent_30['high'].max()
             peak_vol = recent_30['volume'].max()
             
-            drop_rate = (latest['close'] - peak_high) / peak_high
-            vol_dry_rate = latest['volume'] / peak_vol
+            drop_rate = (latest['close'] - peak_high) / peak_high if peak_high > 0 else 0
+            vol_dry_rate = latest['volume'] / peak_vol if peak_vol > 0 else 1
             
-            is_swing_dip = (-0.45 <= drop_rate <= -0.10) and (vol_dry_rate < 0.25) and (latest['close'] > latest['SMA_20'] * 0.90)
+            # [조건 대폭 완화] 하락폭 8~50%, 거래량 40% 이하, 20일선 기준 -15% 이탈까지 허용
+            is_swing_dip = (-0.50 <= drop_rate <= -0.08) and (vol_dry_rate < 0.40) and (latest['close'] > latest['SMA_20'] * 0.85)
             
             score = 0
             matched = []
             
-            # [유연한 가점제] 만족하는 조건만큼 점수와 타이틀 누적
             if is_swing_dip: matched.append("⭐거래량급감(스윙)"); score += 30
             if is_bb_squeeze: matched.append("BB밀집"); score += 20
             if is_obv_accum: matched.append("OBV매집"); score += 20
             
-            # 거래대금 보너스 가점 부여
             if peak_value >= 30000000000: 
                 matched.append("🔥300억(세력개입)"); score += 20
                 
@@ -90,8 +87,9 @@ def run_swing_screener(tickers):
                 matched.append(f"업비트쏠림({dom_percent}%)")
                 score += 10
             
-            # 총점이 30점 이상이면 무조건 결과에 표출
-            if score >= 30:
+            # 기술적 패턴(스윙, BB, OBV) 중 최소 1개 이상 만족하면서 20점 이상인 코인 모두 노출
+            has_technical_pattern = is_swing_dip or is_bb_squeeze or is_obv_accum
+            if score >= 20 and has_technical_pattern:
                 temp_results.append({
                     "코인명": ticker,
                     "만족조건": ", ".join(matched),
@@ -127,8 +125,8 @@ def draw_chart(ticker):
     fig.update_layout(title=f"📈 {ticker} 정밀 타점 차트", yaxis_title="가격 (KRW)", yaxis2_title="거래량", xaxis_rangeslider_visible=False, height=550, template="plotly_white", margin=dict(l=0, r=0, t=40, b=0), showlegend=False)
     return fig
 
-st.title("🎯 코인 스윙 타점 & 매집 통합 스크리너")
-st.markdown("특정 조건에 미달하더라도 강제 탈락시키지 않고, **스윙눌림목, 매집, 거래대금 등의 조건을 얼마나 많이 만족하는지 점수제로 환산**하여 보여줍니다.")
+st.title("🎯 코인 스윙 타점 & 매집 통합 스크리너 (와이드망)")
+st.markdown("코인 시장의 높은 변동성을 감안하여 필터링 조건을 완화했습니다. **최소 1개 이상의 기술적 패턴이 포착된 유망 코인**들을 넓게 스캔하여 보여줍니다.")
 
 if st.button("스윙 & 매집 코인 탐지 시작", type="primary"):
     st.session_state['run_crypto'] = True
@@ -153,4 +151,4 @@ if st.session_state.get('run_crypto', False):
                 st.success(f"**달성조건:** {matched_conds}")
                 st.error(f"**최근 고점 대비:** {drop}")
                 st.warning(f"**최대 펌핑 대금:** {peak}")
-        else: st.warning("현재 최소 기준 점수(30점)를 만족하는 코인이 없습니다.")
+        else: st.warning("완화된 기준(20점)으로도 현재 기술적 스윙 타점에 들어온 코인이 없습니다. (전체 하락장 유력)")
