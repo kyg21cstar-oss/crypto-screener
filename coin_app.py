@@ -54,9 +54,8 @@ def run_swing_screener(tickers):
             price_trend = (recent_10['close'].iloc[-1] - recent_10['close'].iloc[0]) / recent_10['close'].iloc[0]
             obv_trend = recent_10['OBV'].iloc[-1] > recent_10['OBV'].iloc[0]
             
-            # [조건 대폭 완화]
-            is_bb_squeeze = latest['Band_Width'] < 0.25 # 15% -> 25%
-            is_obv_accum = price_trend <= 0.10 and obv_trend # 5% -> 10%
+            is_bb_squeeze = latest['Band_Width'] < 0.25 
+            is_obv_accum = price_trend <= 0.10 and obv_trend 
             
             peak_high = recent_30['high'].max()
             peak_vol = recent_30['volume'].max()
@@ -64,7 +63,6 @@ def run_swing_screener(tickers):
             drop_rate = (latest['close'] - peak_high) / peak_high if peak_high > 0 else 0
             vol_dry_rate = latest['volume'] / peak_vol if peak_vol > 0 else 1
             
-            # [조건 대폭 완화] 하락폭 8~50%, 거래량 40% 이하, 20일선 기준 -15% 이탈까지 허용
             is_swing_dip = (-0.50 <= drop_rate <= -0.08) and (vol_dry_rate < 0.40) and (latest['close'] > latest['SMA_20'] * 0.85)
             
             score = 0
@@ -87,7 +85,6 @@ def run_swing_screener(tickers):
                 matched.append(f"업비트쏠림({dom_percent}%)")
                 score += 10
             
-            # 기술적 패턴(스윙, BB, OBV) 중 최소 1개 이상 만족하면서 20점 이상인 코인 모두 노출
             has_technical_pattern = is_swing_dip or is_bb_squeeze or is_obv_accum
             if score >= 20 and has_technical_pattern:
                 temp_results.append({
@@ -99,7 +96,9 @@ def run_swing_screener(tickers):
                     "종합점수": score
                 })
         except: pass
-        time.sleep(0.04)
+        
+        # [핵심 수정] 업비트 API 차단을 막기 위해 0.04초 -> 0.15초로 딜레이 증가
+        time.sleep(0.15)
         my_bar.progress((i + 1) / len(tickers), text=progress_text)
         
     my_bar.empty()
