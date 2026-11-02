@@ -116,4 +116,56 @@ def run_swing_screener(tickers):
 def draw_chart(ticker):
     df = pyupbit.get_ohlcv(ticker, interval="day", count=90)
     df['SMA_20'] = df['close'].rolling(window=20).mean()
-    df['STD_20'] = df['close'].rolling(
+    df['STD_20'] = df['close'].rolling(window=20).std()
+    df['BB_Upper'] = df['SMA_20'] + (df['STD_20'] * 2)
+    df['BB_Lower'] = df['SMA_20'] - (df['STD_20'] * 2)
+
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
+    fig.add_trace(go.Candlestick(x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close'], name='가격', increasing_line_color='red', decreasing_line_color='blue'), row=1, col=1)
+    
+    # 기준봉 시초가 방어선(가로선) 추가
+    recent_30 = df.tail(30)
+    peak_vol_idx = recent_30['volume'].idxmax()
+    peak_open = df.loc[peak_vol_idx, 'open']
+    fig.add_hline(y=peak_open, line_dash="dot", line_color="green", annotation_text="기준봉 시초가 (세력 방어선)", annotation_position="bottom right")
+    
+    fig.add_trace(go.Scatter(x=df.index, y=df['SMA_20'], line=dict(color='orange', width=2), name='20일선'), row=1, col=1)
+    
+    colors = ['red' if df['close'].iloc[i] > df['open'].iloc[i] else 'blue' for i in range(len(df))]
+    fig.add_trace(go.Bar(x=df.index, y=df['volume'], marker_color=colors, name='거래량'), row=2, col=1)
+    
+    fig.update_layout(title=f"📈 {ticker} 기준봉 시초가 눌림목 차트", yaxis_title="가격 (KRW)", yaxis2_title="거래량", xaxis_rangeslider_visible=False, height=550, template="plotly_white", margin=dict(l=0, r=0, t=40, b=0), showlegend=False)
+    return fig
+
+st.title("🎯 코인 스윙 타점(기준봉 시초가) & 매집 스크리너")
+st.markdown("**과거 대량 거래량으로 펌핑되었던 장대양봉(기준봉)의 시초가 부근까지, 거래량 없이 조정을 받고 지지 중인 완벽한 눌림목**을 추적합니다.")
+
+if st.button("스윙 & 매집 코인 탐지 시작", type="primary"):
+    st.session_state['run_crypto'] = True
+
+if st.session_state.get('run_crypto', False):
+    tickers = get_krw_tickers()
+    if tickers:
+        result_df = run_swing_screener(tickers)
+        if not result_df.empty:
+            st.dataframe(result_df.style.highlight_max(axis=0, subset=['종합점수'], color='#ff4b4b').format({"현재가": "{:,.1f}", "기준봉시초가": "{:,.1f}"}), use_container_width=True)
+            
+            selected_stock = st.selectbox("정밀 차트 분석 (초록색 방어선 확인):", result_df['코인명'].tolist())
+            current_price = result_df[result_df['코인명'] == selected_stock]['현재가'].values[0]
+            peak_open = result_df[result_df['코인명'] == selected_stock]['기준봉시초가'].values[0]
+            peak_val = result_df[result_df['코인명'] == selected_stock]['최대대금(30일)'].values[0]
+            matched_conds = result_df[result_df['코인명'] == selected_stock]['만족조건'].values[0]
+            
+            col1, col2 = st.columns([3, 1])
+            with col1: st.plotly_chart(draw_chart(selected_stock), use_container_width=True)
+            with col2: 
+                st.info(f"**현재가:** {current_price:,.1f} 원")
+                st.warning(f"**기준봉 시초가:** {peak_open:,.1f} 원")
+                st.success(f"**달성조건:** {matched_conds}")
+                st.error(f"**최대 펌핑 대금:** {peak_val}")
+                st.markdown("""
+                **💡 코인 기준봉 타점 팁**
+                * 차트의 **초록색 점선**이 세력이 펌핑을 시작했던 시초가(방어선)입니다.
+                * 현재 가격이 이 선에 거의 닿았는데 하단의 **거래량 막대가 바닥에 붙어있다면(이탈 없음)** 최고의 반등 타점입니다.
+                """)
+        else: st.warning("현재 최소 기준 점수(30점)를 만족하는 기술적 스윙 타점 코인이 없습니다.")
